@@ -1,0 +1,137 @@
+---
+title: "Growth Regimes"
+author: "Petre Buciu"
+---
+
+Let us make a plot similar to yours.
+
+```{r}
+#| fig-width: 9
+#| fig-height: 14
+#| fig-dpi: 300
+library(tidyverse)
+library(ggthemes)
+theme_set(hrbrthemes::theme_ipsum_tw())
+
+nivele <- c("Continental Europe", "LMEs", "Nordic", "Mediterranean/mixed", 
+            "Central and Eastern European", "Baltics", "Advanced Asian", 
+            "Other Western", "South-East Asian", "China", "India", "African", 
+            "Latin and Central American", "Natural resources-rich")
+
+culori <- rep(c("black", "gray50"), 7) 
+names(culori) <- nivele
+
+vax <- read_csv(here::here("data", "vax.csv"))
+
+vax %>% 
+  filter(year>1995) %>% filter(year!=2008) %>% 
+  group_by(clasificare, country, component, period=if_else(year<2008, "1996-2007", "2009-2018")) %>%
+  mutate(VAR=100*mean(VA, na.rm=TRUE)/abs(mean(total, na.rm=TRUE)), 
+         VAp=100*VA/total) %>% ungroup() %>%
+  group_by(clasificare, component, period) %>% 
+  mutate(VAR_region = 100*mean(VA, na.rm=TRUE)/mean(total, na.rm=TRUE)) %>% 
+  ungroup() %>% filter(component=="Exports") %>% 
+  mutate_at(vars(VAR:VAp), ~if_else(.<0, 0, .)) %>% 
+  mutate_at(vars(VAR:VAp), ~if_else(.>100, 100, .)) %>% drop_na() %>%
+  mutate(country = as.factor(country), 
+         clasificare=as.factor(clasificare)) %>% 
+  mutate(clasificare = ordered(clasificare, levels=nivele)) %>%
+  arrange(clasificare, country) %>% group_by(year) %>% 
+  mutate(index=row_number()) %>% ungroup() %>%
+  mutate(culoare = unname(culori[clasificare])) %>% 
+  mutate(country = glue::glue("<i style='color:{culoare}'>{country}</i>")) %>%
+  mutate(country = fct_reorder(country, index, .desc = TRUE)) %>%
+  select(-year, -total,-VA, -VAp) %>% distinct() %>% 
+  pivot_wider(names_from = period, values_from=c(VAR, VAR_region)) %>%
+  select(-component) %>% 
+  ggplot(aes(x=country, y=`VAR_1996-2007`)) + 
+  geom_hline(yintercept = seq(27, 35, length.out=100), colour='grey98') +
+  geom_hline(yintercept=seq(35, 46, length.out=100), colour='grey95') +
+  geom_hline(yintercept=c(27, 35, 46), linetype=2) +
+  geom_point(colour='#EEA100', size=2) + 
+  geom_point(aes(x=country, y=`VAR_2009-2018`), 
+             size=2, colour='royalblue3') + 
+  geom_segment(aes(xend=country, x=country, 
+                   y=`VAR_1996-2007`, yend=`VAR_2009-2018`,
+                   colour=culoare), 
+               show.legend = FALSE,
+               arrow=arrow(length=unit(0.25, "cm"))) + coord_flip() +
+  scale_y_continuous(labels=scales::percent_format(scale=1)) +
+  labs(title="Final demand decomposition value-added contributions", 
+       subtitle="Source: OECD-ICIO, 2021", x=NULL, y=NULL) +
+  scale_colour_manual(values=culori[1:2]) +
+  scale_size(range=c(0.1, 5)) +
+  facet_grid(rows=vars(clasificare), scales='free_y', space='free_y', switch = 'y') +
+  theme(panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(size=7), strip.placement = 'outside',
+        strip.text.y.left = element_text(angle=0, size=8),
+        panel.spacing = unit(0, 'cm'),
+        axis.text.y.left = ggtext::element_markdown(),
+        strip.text= element_text(family = "Roboto", face = 2),
+        plot.title.position = 'plot') 
+
+```
+
+There are some differences between these graphs, but there is an overall agreement as well. Let us now see the growth contribution on the regional level.
+
+```{r}
+#| fig-width: 9
+#| fig-height: 6
+#| fig-dpi: 200
+
+vax %>% 
+  filter(year>1995) %>% filter(year!=2008) %>%
+  group_by(clasificare, country, component, 
+           period=if_else(year<2008, "1996-2007", "2009-2018")) %>%
+  mutate(VAR=100*mean(VA, na.rm=TRUE)/abs(mean(total, na.rm=TRUE)), 
+         VAp=100*VA/total) %>% ungroup() %>%
+  group_by(clasificare, component, period) %>% 
+  mutate(VAR_region = 100*mean(VA, na.rm=TRUE)/abs(mean(total, na.rm=TRUE))) %>% 
+  ungroup() %>% filter(component=="Exports") %>% drop_na() %>%
+  mutate(country = as.factor(country), 
+         clasificare=as.factor(clasificare)) %>% 
+  mutate(clasificare = ordered(clasificare, levels=nivele)) %>% 
+  select(period, VAR_region, clasificare) %>% distinct() %>% 
+  ggplot(aes(x=clasificare, y=VAR_region, fill=perioad)) + 
+  geom_col(aes(fill=period), position='dodge') + coord_flip() +
+  scale_fill_tableau() +
+  labs(title="Relative contribution of exports to VA", 
+       subtitle='Regional level', x=NULL, y=NULL)
+```
+
+Let us see the export sectors with the greatest change between 1995-2007 and 2009-2018 as contribution to value added in six eastern european countries.
+
+```{r}
+library(gtExtras)
+library(gt)
+vaxd <- read_csv(here::here("data", "vaxd.csv"))
+vaxd %>% relocate(country) %>% filter(year!=2008) %>%
+  group_by(country, year=if_else(year<2008, "1995-2007", "2009-2018")) %>% 
+  summarise(across(2:57, sum)) %>% ungroup() %>% 
+  select(1:2, matches("[0-9]+")) %>% 
+  gather(3:46, key='component', value='valoare') %>% 
+  group_by(country, year) %>% mutate(total=sum(valoare)) %>% 
+  filter(grepl("Romania|Bulgaria|Hungary|Poland|Slovakia|Czechia", country)) %>% 
+  mutate(valoare=100*valoare/total) %>% select(-total) %>% 
+  ungroup() %>% spread(year, valoare) %>% 
+  mutate(delta=`2009-2018`-`1995-2007`) %>% group_by(country) %>% 
+  slice_max(abs(delta), n=10) %>% ungroup() %>% 
+  rename(prod=component) %>% mutate(prod=paste0("D", prod)) %>% 
+  inner_join(read_csv(here::here('data', 'coduri.csv'))) %>% 
+  arrange(desc((delta))) %>% select(-prod) %>% 
+  relocate(country, sector) %>% group_by(country) %>% 
+  gt::gt() %>% gtExtras::gt_theme_538() %>% 
+  gt::fmt_percent(2:5, scale_values = FALSE) %>% 
+  gt::tab_style(gt::cell_fill(color='#EEA100'), 
+                gt::cells_column_labels()) %>% 
+  gt::tab_style(gt::cell_fill(color="grey95"), gt::cells_group()) %>% 
+  gt::opt_table_font(font='Roboto') %>%
+  gt::tab_style(gt::cell_text(weight = 'bold'),gt::cells_column_labels()) %>%
+  gt::tab_header(title="Top 10 export sectors by value added generated",
+  subtitle="Sorted by the largest absolute difference between periods") %>%
+  gt::tab_style(gt::cell_text(weight = 'bold'), gt::cells_title(groups='title')) %>%
+  gt::tab_style(gt::cell_text(weight='bold'), gt::cells_group()) %>%
+  gt::tab_footnote(footnote="Relative contribution to total VA generated by exports",
+                   locations = gt::cells_title(groups='subtitle'))
+
+```

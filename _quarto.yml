@@ -1,0 +1,29 @@
+project:
+  type: book
+  output-dir: docs
+
+book:
+  title: "Input-Output Analysis for growth regimes"
+  author: "Petre Buciu"
+  date: "6/21/2023"
+  chapters:
+    - index.qmd
+    - teorie.qmd
+    - analize_exploratorii.qmd
+    - regimuri.qmd
+    - references.qmd
+
+bibliography: references.bib
+
+format:
+  html:
+    theme: cosmo
+  pdf:
+    documentclass: scrreprt
+execute:
+  echo: false
+  warning: false
+  message: false
+
+editor: visual
+
