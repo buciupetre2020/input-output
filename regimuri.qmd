@@ -6,9 +6,9 @@ author: "Petre Buciu"
 Let us make a plot similar to yours.
 
 ```{r}
-#| fig-width: 9
-#| fig-height: 14
-#| fig-dpi: 300
+#| fig-width: 8
+#| fig-height: 12
+#| fig-dpi: 200
 library(tidyverse)
 library(ggthemes)
 theme_set(hrbrthemes::theme_ipsum_tw())

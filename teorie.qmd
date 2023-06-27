@@ -27,7 +27,7 @@ $$
 
 Where $\textbf{s}^T$ is the summation vector transposed , $\textbf{M}$ is the import coefficient matrix $\textbf{e}$ is the vector (or matrix if disaggreggated) of exports.
 
-## Domestic Trade Value added 
+## Domestic Trade Value added
 
 Similarly, we can calculate the domestic value added content of trade (or more generaly final demand categories) which we will use in our analysis.
 
