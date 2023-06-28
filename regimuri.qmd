@@ -80,23 +80,24 @@ There are some differences between these graphs, but there is an overall agreeme
 #| fig-dpi: 200
 
 vax %>% 
-  filter(year>1995) %>% filter(year!=2008) %>%
-  group_by(clasificare, country, component, 
-           period=if_else(year<2008, "1996-2007", "2009-2018")) %>%
-  mutate(VAR=100*mean(VA, na.rm=TRUE)/abs(mean(total, na.rm=TRUE)), 
-         VAp=100*VA/total) %>% ungroup() %>%
-  group_by(clasificare, component, period) %>% 
-  mutate(VAR_region = 100*mean(VA, na.rm=TRUE)/abs(mean(total, na.rm=TRUE))) %>% 
-  ungroup() %>% filter(component=="Exports") %>% drop_na() %>%
-  mutate(country = as.factor(country), 
-         clasificare=as.factor(clasificare)) %>% 
+  filter(year!=2008) %>% 
+  group_by(clasificare, year) %>%
+  mutate(total=sum(total)) %>%
+  ungroup() %>% group_by(clasificare, year, component) %>% 
+  mutate(VA=sum(VA)) %>% ungroup() %>%
+  group_by(clasificare, component, period=if_else(year<2008, "1996-2007", "2009-2018")) %>%
+  summarise(VAR=100*mean(VA, na.rm=TRUE)/abs(mean(total, na.rm=TRUE))) %>% ungroup() %>%
+  filter(component=="Exports") %>% drop_na() %>%
+  mutate(VAR=if_else(VAR<0, 0, VAR)) %>% 
+  mutate(VAR=if_else(VAR>100, 100, VAR)) %>% drop_na() %>%
   mutate(clasificare = ordered(clasificare, levels=nivele)) %>% 
-  select(period, VAR_region, clasificare) %>% distinct() %>% 
-  ggplot(aes(x=clasificare, y=VAR_region, fill=perioad)) + 
+  select(period, VAR, clasificare) %>% distinct() %>% 
+  ggplot(aes(x=clasificare, y=VAR, fill=perioad)) + 
   geom_col(aes(fill=period), position='dodge') + coord_flip() +
   scale_fill_tableau() +
-  labs(title="Relative contribution of exports to VA", 
-       subtitle='Regional level', x=NULL, y=NULL)
+  scale_y_log10() + labs(title="Exports contribution to VA", 
+                         subtitle='Regional level')
+
 ```
 
 Let us see the export sectors with the greatest change between 1995-2007 and 2009-2018 as contribution to value added in six eastern european countries.

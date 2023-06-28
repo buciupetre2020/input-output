@@ -172,9 +172,9 @@ importuri <- function(icio, selection){
 
 eastern <- list()
 for(i in c("ROU", "CZE", "HUN", "BGR", "POL", "SVK")){
-eastern[[i]] <- future_map(iciot, ~importuri(icio=.x, selection="ROU") %>%
-                       agrega(., axa=2, what='categorii', selection='ROU') %>%
-                       agrega(., axa=1, what='sectoare', selection='ROU'))
+eastern[[i]] <- future_map(iciot, ~importuri(icio=.x, selection=i) %>%
+                       agrega2(., by='categorii', selection=i) %>%
+                       agrega(., axa=1, what='sectoare', selection=i))
 
 eastern[[i]] <- map2_dfr(eastern[[i]],1995:2018, ~.x %>% as_tibble(rownames='sectoare') %>% 
                                          mutate(year=.y))
@@ -246,7 +246,7 @@ sda_tara <- function(iciot, tara, what="M"){
   imp <- list(23)
   for(i in 1:23){
     imp[[i]] <- sda(icio1=iciot[[i]], icio2=iciot[[(i+1)]], what=what, country = tara) %>% 
-      map(., ~agrega(.x, axa=2, what='sectoare', selection=tara))
+      map(., ~agrega2(mat=.x, by='sectoare', selection=tara))
   }
   message(tara)
   return(imp)
@@ -350,7 +350,7 @@ return(df)
 sda_contrib <- function(tara, what='V', agregare='categorii'){
 romania <- sda_tara(iciot, tara=tara, what='V')
 x <- map(romania, ~(.x$dL+.x$dM+.x$df) %>% 
-      agrega(axa=2, what=agregare, selection=tara) %>% colSums()) %>% 
+      agrega2(mat=., by=agregare, selection=tara) %>% colSums()) %>% 
   tibble(ceva=.) %>% unnest_wider(ceva) %>% 
   mutate(year=1995:2017) %>% relocate(year) %>% 
   gather(2:ncol(.), key='demand', value='valoare') %>%
@@ -386,7 +386,7 @@ vax %>%
   inner_join(read_csv(here::here("data", 'clasificare.csv'))) %>%
   filter(year!=2008) %>%
   group_by(clasificare, country, component, period=if_else(year<2008, "1995-2007", "2009-2018")) %>%
-  mutate(VAR=100*mean(VA, na.rm=TRUE)/mean(total, na.rm=TRUE), 
+  mutate(VAR=100*mean(VA, na.rm=TRUE)/abs(mean(total, na.rm=TRUE)), 
          VAp=100*VA/total) %>% ungroup() %>%
   group_by(clasificare, component, period) %>% 
   mutate(VAR_region = 100*mean(VA, na.rm=TRUE)/mean(total, na.rm=TRUE)) %>% 
@@ -403,13 +403,13 @@ vax %>%
   select(-year, -total,-VA, -VAp) %>% distinct() %>% 
   pivot_wider(names_from = period, values_from=c(VAR, VAR_region)) %>%
   select(-component) %>% 
-  ggplot(aes(x=country, y=`VAR_1996-2007`)) + 
+  ggplot(aes(x=country, y=`VAR_1995-2007`)) + 
   geom_hline(yintercept = seq(27, 35, length.out=100), colour='grey98') +
   geom_hline(yintercept=seq(35, 46, length.out=100), colour='grey95') +
   geom_hline(yintercept=c(27, 35, 46), linetype=2) +
   geom_point(colour='#EEA100', size=2) + 
   geom_point(aes(x=country, y=`VAR_2009-2018`), size=2, colour='royalblue3') + 
-  geom_segment(aes(xend=country, x=country, y=`VAR_1996-2007`, yend=`VAR_2009-2018`,
+  geom_segment(aes(xend=country, x=country, y=`VAR_1995-2007`, yend=`VAR_2009-2018`,
                    colour=culoare), show.legend = FALSE,
                arrow=arrow(length=unit(0.25, "cm"))) + coord_flip() +
   scale_y_continuous(labels=scales::percent_format(scale=1)) +
@@ -433,19 +433,22 @@ vax %>%
                                           origin='iso3c', 
                                           destination='country.name')) %>% 
   inner_join(read_csv(here::here("data", 'clasificare.csv'))) %>%
-  filter(year!=2008) %>%
-  group_by(clasificare, country, component, period=if_else(year<2008, "1996-2007", "2009-2018")) %>%
-  mutate(VAR=100*mean(VA, na.rm=TRUE)/mean(total, na.rm=TRUE), 
-         VAp=100*VA/total) %>% ungroup() %>%
-  group_by(clasificare, component, period) %>% 
-  mutate(VAR_region = 100*mean(VA, na.rm=TRUE)/mean(total, na.rm=TRUE)) %>% 
-  ungroup() %>% filter(component=="Exports") %>% drop_na() %>%
-  mutate(country = as.factor(country), clasificare=as.factor(clasificare)) %>% 
+  filter(year!=2008) %>% 
+  group_by(clasificare, year) %>%
+  mutate(total=sum(total)) %>%
+  ungroup() %>% group_by(clasificare, year, component) %>% 
+  mutate(VA=sum(VA)) %>% ungroup() %>%
+  group_by(clasificare, component, period=if_else(year<2008, "1996-2007", "2009-2018")) %>%
+  summarise(VAR=100*mean(VA, na.rm=TRUE)/abs(mean(total, na.rm=TRUE))) %>% ungroup() %>%
+  filter(component=="Exports") %>% drop_na() %>%
+  mutate(VAR=if_else(VAR<0, 0, VAR)) %>% 
+  mutate(VAR=if_else(VAR>100, 100, VAR)) %>% drop_na() %>%
   mutate(clasificare = ordered(clasificare, levels=nivele)) %>% 
-  select(period, VAR_region, clasificare) %>% distinct() %>% 
-  ggplot(aes(x=clasificare, y=VAR_region, fill=perioad)) + 
+  select(period, VAR, clasificare) %>% distinct() %>% 
+  ggplot(aes(x=clasificare, y=VAR, fill=perioad)) + 
   geom_col(aes(fill=period), position='dodge') + coord_flip() +
-  scale_fill_tableau()
+  scale_fill_tableau() +
+  scale_y_log10()
 
 
 vaxd %>% relocate(country) %>% filter(year!=2008) %>%
@@ -495,5 +498,21 @@ rez %>% filter(country%in%c("ROU")) %>%
   ggthemes::scale_fill_tableau()
 
   
+#============================================================
+i <- importuri(iciot[[24]], selection='ROU')
 
-
+agrega2 <- function(mat, by='sectoare', selection){
+  tmat <- t(mat)
+if(by=='tari'){
+  tari <- str_extract(colnames(mat), "^[A-Z0-9]{3}")
+  x <- t(aggregate.Matrix(tmat, groupings = tari, fun='sum')) %>% as.matrix()
+} else if(by=='sectoare'){
+  sectoare <- if_else(grepl(selection, colnames(mat)), colnames(mat), 
+                      gsub("^[A-Z0-9]{3}_", "", colnames(mat))) 
+  x <- t(aggregate.Matrix(tmat, groupings = sectoare, fun='sum')) %>% as.matrix()
+} else {
+  categorii <- if_else(grepl(selection, colnames(mat)), colnames(mat), "Exporturi")
+  x <- t(aggregate.Matrix(tmat, groupings=categorii, fun='sum')) %>% as.matrix()
+}
+  return(x)
+}
