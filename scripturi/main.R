@@ -6,7 +6,7 @@ theme_set(hrbrthemes::theme_ipsum_tw())
 
 iciot <- map(1995:2018, ~read_csv(citeste(.x)) %>% rename(prod=...1))
 
-make_A <- function(icio, selection="ROU"){
+make_A <- function(icio, selection="ROU", what="A"){
   icio <- icio %>% filter(!grepl("TAXSUB|VALU", prod)) %>%
           select(-TOTAL) %>% select(-matches("HFCE|NPISH|GGFC|GFCF|INVNT|DPABR"))
   output <- icio %>% filter(prod=="OUTPUT") %>% select(-1) %>% unlist()
@@ -16,7 +16,9 @@ make_A <- function(icio, selection="ROU"){
   Z <- icio %>% filter(prod!="OUTPUT") %>% column_to_rownames("prod") %>% as.matrix()
   colnames(output) <- colnames(Z)
   rownames(output) <- rownames(Z)
-  
+  if(what=='Z'){
+    return(Z)
+  }
   if(selection=='all'){
   A <- Z %*% output
   } else {
@@ -99,6 +101,8 @@ agrega <- function(matrice, axa=1, what, selection='ROU'){
         summarise(valoare = sum(valoare, na.rm=TRUE)) %>% ungroup() %>% 
         spread(use, valoare) %>% column_to_rownames("prod") %>% 
         as.matrix()
+      colnames(x) <- gsub("^.+\\_", "INT_", colnames(x))
+      
     } else if(what=='tari'){
       x <- as_tibble(matrice, rownames='prod') %>% 
         gather(2:ncol(.), key="use", value='valoare') %>% 
@@ -126,6 +130,8 @@ agrega <- function(matrice, axa=1, what, selection='ROU'){
         summarise(valoare = sum(valoare, na.rm=TRUE)) %>% ungroup() %>% 
         spread(use, valoare) %>% column_to_rownames("prod") %>% 
         as.matrix()
+      colnames(x) <- gsub("^.+\\_", "INT_", colnames(x))
+      
       
     } else if(what=='tari'){
       x <- as_tibble(matrice, rownames='prod') %>% 
@@ -145,7 +151,7 @@ agrega <- function(matrice, axa=1, what, selection='ROU'){
 
 aduna <- function(I, M){
   as_tibble(I, rownames='prod') %>% 
-    gather(2:ncol(.), key='categorii', value='valoare') %>%
+    gather(2:ncol(.), key='sectoare', value='valoare') %>%
     bind_rows(as_tibble(M, rownames="prod") %>% 
                 gather(2:ncol(.), key='categorii', value='valoare')) %>%
     group_by(prod, categorii) %>% summarise(valoare=sum(valoare, na.rm=TRUE)) %>%
@@ -153,22 +159,55 @@ aduna <- function(I, M){
     as.matrix()
 }
 
+#de incredere
+importuri <- function(icio, selection){
+  i <- make_M(icio, selection = selection)%*%make_L(make_A(icio, selection=selection))%*%make_f(icio, selection=selection)
+  dir <- make_I(icio, selection=selection)
+  index <- colnames(i)%in%colnames(dir)
+  mat <- matrix(data=0, ncol=length(index), nrow=nrow(i))
+  mat[,index] <- dir
+  rez <- i + mat
+  return(rez)
+}
+
+eastern <- list()
+for(i in c("ROU", "CZE", "HUN", "BGR", "POL", "SVK")){
+eastern[[i]] <- future_map(iciot, ~importuri(icio=.x, selection="ROU") %>%
+                       agrega(., axa=2, what='categorii', selection='ROU') %>%
+                       agrega(., axa=1, what='sectoare', selection='ROU'))
+
+eastern[[i]] <- map2_dfr(eastern[[i]],1995:2018, ~.x %>% as_tibble(rownames='sectoare') %>% 
+                                         mutate(year=.y))
+
+eastern[[i]] <- eastern[[i]] %>% mutate(Exporturi=Exporturi+INT_DPABR,
+                              Gospodării = INT_HFCE+INT_NPISH,
+                              Stat = INT_GGFC,
+                              Investiţii = INT_GFCF) %>%
+           select(sectoare, Exporturi, Gospodării, Stat, Investiţii, year) %>%
+           gather(Exporturi:Investiţii, key='component', value='valoare')
+}
+
+eastern <- map2_dfr(eastern, c("ROU", "CZE", "HUN", "BGR", "POL", "SVK"), 
+                   ~.x %>% mutate(country=.y))
+
+
+
 aranjeaza <- function(icio, selection){
 i <- make_M(icio, selection = selection)%*%make_L(make_A(icio, selection=selection))%*%make_f(icio, selection=selection)
 i <- agrega(i, axa=2, what='sectoare', selection=selection)
 
-rez <- #aduna(I=make_I(icio, selection=selection), M=i) %>% 
-  i %>% agrega(., axa=1, what='sectoare', selection=selection) %>% 
+rez <- aduna(I=make_I(icio, selection=selection), M=i) %>% 
+  agrega(., axa=1, what='sectoare', selection=selection) %>% 
   as_tibble(rownames='prod') 
 return(rez)
 }
 
 
 importuri_tara <- function(country){
-rez <- map(c(1:24),~aranjeaza(icio=iciot[[.x]], selection=country) %>% 
+rez <- future_map(c(1:24),~aranjeaza(icio=iciot[[.x]], selection=country) %>% 
                     mutate(year=.x+1994)) %>% bind_rows() %>%
                     group_by(year) %>% summarise(across(2:57, sum)) %>%
-                    ungroup() %>% gather(2:57, key='name', value='imp')
+                    ungroup() %>% gather(2:ncol(.), key='name', value='imp')
 
 demands <- map_dfr(1:24, ~make_f(icio=iciot[[.x]], selection=country) %>% 
                           agrega(., axa=2, what='sectoare', selection=country) %>%
@@ -339,13 +378,14 @@ vax <- future_map(unique(gsub("_.+$", "", icio$prod))[1:66], ~
 vaxd <- future_map(unique(gsub("_.+$", "", icio$prod))[1:66], ~
         sda_contrib(tara=.x, what='V', agregare='sectoare')) %>% bind_rows()
 
+
 vax %>% 
   mutate(country=countrycode::countrycode(sourcevar=vax$country, 
                                           origin='iso3c', 
                                           destination='country.name')) %>% 
   inner_join(read_csv(here::here("data", 'clasificare.csv'))) %>%
-  filter(year>1995) %>% filter(year!=2008) %>%
-  group_by(clasificare, country, component, period=if_else(year<2008, "1996-2007", "2009-2018")) %>%
+  filter(year!=2008) %>%
+  group_by(clasificare, country, component, period=if_else(year<2008, "1995-2007", "2009-2018")) %>%
   mutate(VAR=100*mean(VA, na.rm=TRUE)/mean(total, na.rm=TRUE), 
          VAp=100*VA/total) %>% ungroup() %>%
   group_by(clasificare, component, period) %>% 
@@ -393,7 +433,7 @@ vax %>%
                                           origin='iso3c', 
                                           destination='country.name')) %>% 
   inner_join(read_csv(here::here("data", 'clasificare.csv'))) %>%
-  filter(year>1995) %>% filter(year!=2008) %>%
+  filter(year!=2008) %>%
   group_by(clasificare, country, component, period=if_else(year<2008, "1996-2007", "2009-2018")) %>%
   mutate(VAR=100*mean(VA, na.rm=TRUE)/mean(total, na.rm=TRUE), 
          VAp=100*VA/total) %>% ungroup() %>%
@@ -453,4 +493,7 @@ rez %>% filter(country%in%c("ROU")) %>%
   labs(title = "Driverii importurilor după categorii de cerere finală", 
        x="Sector", y="milioane USD") +
   ggthemes::scale_fill_tableau()
+
+  
+
 

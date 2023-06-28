@@ -100,3 +100,42 @@ vax %>% filter(grepl("Eastern", clasificare)) %>%
 ```
 
 We can see more clearly now that we had negative (absolute) contributions from exports in a few years after the financial crisis and some constant contributions afterwards. They mostly cancel out but they remain positive (actually the only positive component in the 2009-2018 period). So we will use the math module function for the total value added so we can have positive contribution of positive components even when growth is negative.
+
+Let us see mediterranean/mixed economies:
+
+```{r}
+#| fig-width: 10
+#| fig-height: 10
+#| fig-dpi: 200
+
+vax %>% filter(year!=2008) %>% filter(country!="Cyprus") %>%
+  filter(grepl("Mediterranean", clasificare)) %>% 
+  group_by(country, component, 
+           year=if_else(year<2008, "1995-2007", "2009-2018")) %>% 
+  summarise(VAR=100*mean(VA)/abs(mean(total))) %>% 
+  ggplot(aes(x=year, y=VAR, fill=component)) + 
+  geom_col(aes(fill=component)) + 
+  facet_wrap(~country, ncol=2, scales='free') + 
+  scale_fill_tableau() + 
+  labs(title="Relative contribution to VA growth", 
+       subtitle="Mediterranean/mixed economies", x=NULL, y=NULL) +
+  scale_y_continuous(labels=scales::percent_format(scale=1))
+```
+
+And cumulative yearly changes:
+
+```{r}
+#| fig-width: 10
+#| fig-height: 10
+#| fig-dpi: 200
+
+vax %>% filter(grepl("Mediterranean", clasificare)) %>% 
+  mutate(VAR=100*VA/total) %>% filter(country!="Cyprus") %>%
+  group_by(component, country) %>% mutate(VA=cumsum(VA)) %>% 
+  ggplot(aes(x=year, y=VA, fill=component)) + geom_col() +
+  labs(title="Mediterranean VA decomposed", x=NULL, y="million USD")+
+  scale_y_continuous(labels=scales::number_format()) +
+  scale_fill_tableau() +
+  facet_wrap(~country, ncol=2, scales='free') +
+  theme(legend.position = 'top')
+```
